@@ -1,7 +1,7 @@
 import streamlit as st
 import torch
 from rdkit import Chem
-from rdkit.Chem import AllChem, DataStructs, Draw, Descriptors
+from rdkit.Chem import AllChem, DataStructs, Descriptors
 import numpy as np
 import pandas as pd
 from torch_geometric.data import Data
