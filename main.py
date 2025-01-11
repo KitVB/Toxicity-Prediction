@@ -6,6 +6,7 @@ import numpy as np
 from torch_geometric.data import Data
 from torch.nn import Linear
 from torch_geometric.nn import GCNConv, global_mean_pool
+import torch.nn.functional as F
 
 class GCN(torch.nn.Module):
     def __init__(self, hidden_channels, input_features=2048):  # ECFP size is 1024 bits by default
