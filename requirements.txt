@@ -6,3 +6,4 @@ numpy
 pandas
 PIL
 io
+libXrender
