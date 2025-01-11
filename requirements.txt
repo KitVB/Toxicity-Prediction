@@ -1,0 +1,6 @@
+torch
+torchvision
+torch-geometric
+rdkit
+numpy
+pandas
