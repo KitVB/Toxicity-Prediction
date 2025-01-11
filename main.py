@@ -5,8 +5,6 @@ from rdkit.Chem import AllChem, DataStructs, Draw, Descriptors
 import numpy as np
 import pandas as pd
 from torch_geometric.data import Data
-from PIL import Image
-from io import BytesIO
 from torch.nn import Linear
 from torch_geometric.nn import GCNConv, global_mean_pool
 import torch.nn.functional as F
@@ -47,14 +45,6 @@ def calculate_descriptors(smiles):
         return pd.Series([mol_wt, exact_mol_wt, heavy_atom_mol_wt, smiles_length])
     else:
         return pd.Series([None, None, None, None])
-
-# Generate 2D image of the molecule
-def generate_molecule_image(mol):
-    if mol:
-        img = Draw.MolToImage(mol, size=(300, 300))
-        return img
-    else:
-        return None
 
 
 class GCN(torch.nn.Module):
@@ -126,7 +116,7 @@ def canonicalize_smiles(smiles):
 
 # Streamlit App
 st.title("Molecule Toxicity Predictor")
-st.write("Enter a SMILES string to predict the toxicity of a molecule, visualize its structure, and explore molecular properties.")
+st.write("Enter a SMILES string to predict the toxicity of a molecule and explore its molecular properties.")
 
 # Input field for SMILES
 smiles_input = st.text_input("Enter SMILES string:")
@@ -150,9 +140,6 @@ if st.button("Predict"):
 
             # Generate molecule and image
             mol = Chem.MolFromSmiles(canonical_smiles)
-            img = generate_molecule_image(mol)
-            if img:
-                st.image(img, caption="2D Structure", use_column_width=False)
 
             # Check substructures
             substructure_results = check_substructures(mol, substructures)
