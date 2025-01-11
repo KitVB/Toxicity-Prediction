@@ -4,6 +4,3 @@ torch-geometric
 rdkit
 numpy
 pandas
-PIL
-io
-libXrender
