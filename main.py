@@ -4,6 +4,23 @@ from rdkit import Chem
 from rdkit.Chem import AllChem, DataStructs
 import numpy as np
 from torch_geometric.data import Data
+from torch.nn import Linear
+from torch_geometric.nn import GCNConv, global_mean_pool
+
+class GCN(torch.nn.Module):
+    def __init__(self, hidden_channels, input_features=2048):  # ECFP size is 1024 bits by default
+        super(GCN, self).__init__()
+        torch.manual_seed(42)
+        self.fc1 = Linear(input_features, hidden_channels)
+        self.fc2 = Linear(hidden_channels, hidden_channels)
+        self.fc3 = Linear(hidden_channels, 1)
+
+    def forward(self, x, edge_index, batch):
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = global_mean_pool(x, batch)  # Pooling for graph classification
+        x = self.fc3(x)
+        return torch.sigmoid(x)  # Binary classification
 
 # 1. Define a function to preprocess a single SMILES string and generate input data
 def preprocess_smiles(smiles, radius=2, nBits=1024):
