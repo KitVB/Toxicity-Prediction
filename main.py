@@ -42,7 +42,7 @@ def preprocess_smiles(smiles, radius=2, nBits=1024):
 # 2. Define a function to load the trained model
 def load_trained_model(model_path, hidden_channels, input_features=2048):
     model = GCN(hidden_channels, input_features)
-    model.load_state_dict(torch.load(model_path, weights_only=True))
+    model.load_state_dict(torch.load(model_path))
     model.eval()
     return model
 
