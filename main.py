@@ -1,51 +1,12 @@
 import streamlit as st
 import torch
 from rdkit import Chem
-from rdkit.Chem import AllChem, DataStructs, Descriptors
+from rdkit.Chem import AllChem, DataStructs
 import numpy as np
-import pandas as pd
 from torch_geometric.data import Data
 from torch.nn import Linear
 from torch_geometric.nn import GCNConv, global_mean_pool
 import torch.nn.functional as F
-
-# Substructure definitions
-substructures = {
-    'Aromatic_Amines': 'c1ccc(cc1)N',
-    'Nitro_Groups': '[N+](=O)[O-]',
-    'Halogenated_Compounds_Cl': 'Cl',
-    'Halogenated_Compounds_Br': 'Br',
-    'Halogenated_Compounds_F': 'F',
-    'Aldehydes_Ketones': 'C=O',
-    'Alcohols_Phenols': '[OX2H]',
-    'Carboxylic_Acids': 'C(=O)O',
-    'Esters': 'C(=O)O',
-    'Amides': 'C(=O)N',
-    'Quinones': 'C1=CC(=O)C=CC1=O',
-    'Sulfonamides': 'S(=O)(=O)N',
-    'Epoxides': 'O1CO1'
-}
-
-# Function to check substructures
-def check_substructures(mol, substructures):
-    results = {}
-    for name, smarts in substructures.items():
-        substructure_mol = Chem.MolFromSmarts(smarts)
-        results[name] = mol.HasSubstructMatch(substructure_mol)
-    return results
-
-# Function to calculate molecular descriptors
-def calculate_descriptors(smiles):
-    mol = Chem.MolFromSmiles(smiles)
-    if mol:
-        mol_wt = Descriptors.MolWt(mol)
-        exact_mol_wt = Descriptors.ExactMolWt(mol)
-        heavy_atom_mol_wt = Descriptors.HeavyAtomMolWt(mol)
-        smiles_length = len(smiles)
-        return pd.Series([mol_wt, exact_mol_wt, heavy_atom_mol_wt, smiles_length])
-    else:
-        return pd.Series([None, None, None, None])
-
 
 class GCN(torch.nn.Module):
     def __init__(self, hidden_channels, input_features=2048):  # ECFP size is 1024 bits by default
@@ -116,7 +77,7 @@ def canonicalize_smiles(smiles):
 
 # Streamlit App
 st.title("Molecule Toxicity Predictor")
-st.write("Enter a SMILES string to predict the toxicity of a molecule and explore its molecular properties.")
+st.write("Enter a SMILES string to predict the toxicity of a molecule.")
 
 # Input field for SMILES
 smiles_input = st.text_input("Enter SMILES string:")
@@ -137,20 +98,6 @@ if st.button("Predict"):
             st.error("Invalid SMILES string. Please enter a valid SMILES.")
         else:
             st.write(f"Canonical SMILES: {canonical_smiles}")
-
-            # Generate molecule and image
-            mol = Chem.MolFromSmiles(canonical_smiles)
-
-            # Check substructures
-            substructure_results = check_substructures(mol, substructures)
-            st.write("### Substructure Presence")
-            st.write(pd.DataFrame.from_dict(substructure_results, orient='index', columns=['Present']))
-
-            # Calculate and display descriptors
-            descriptors = calculate_descriptors(canonical_smiles)
-            descriptors_df = pd.DataFrame([descriptors], columns=['MolWt', 'ExactMolWt', 'HeavyAtomMolWt', 'SMILES_Length'])
-            st.write("### Molecular Descriptors")
-            st.write(descriptors_df)
 
             # Predict toxicity
             result, probability = predict_toxicity(canonical_smiles, model)
