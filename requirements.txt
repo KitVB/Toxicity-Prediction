@@ -4,3 +4,4 @@ torch-geometric
 rdkit
 numpy
 pandas
+joblib
