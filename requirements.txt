@@ -5,3 +5,5 @@ rdkit
 numpy
 pandas
 joblib
+lightgbm
+scikit-learn
