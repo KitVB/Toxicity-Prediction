@@ -5,54 +5,71 @@ from rdkit.Chem import AllChem, DataStructs, Descriptors
 from rdkit.ML.Descriptors import MoleculeDescriptors
 import numpy as np
 import pandas as pd
-from torch_geometric.data import Data
+from torch_geometric.data import Data, DataLoader
 from torch.nn import Linear
 from torch_geometric.nn import GCNConv, global_mean_pool
 import torch.nn.functional as F
 import joblib
 import os
 
-# GCN Model for ECFP fingerprints
+# New GCN Model with dropout
 class GCN(torch.nn.Module):
-    def __init__(self, hidden_channels, input_features=2048):  # ECFP size is 1024 bits by default
+    def __init__(self, num_features, hidden_dim, num_classes, dropout_rate=0.5):
         super(GCN, self).__init__()
-        torch.manual_seed(42)
-        self.fc1 = Linear(input_features, hidden_channels)
-        self.fc2 = Linear(hidden_channels, hidden_channels)
-        self.fc3 = Linear(hidden_channels, 1)
+        self.conv1 = GCNConv(num_features, hidden_dim)
+        self.conv2 = GCNConv(hidden_dim, hidden_dim)
+        self.fc = torch.nn.Linear(hidden_dim, num_classes)
+        self.dropout = torch.nn.Dropout(dropout_rate)
 
     def forward(self, x, edge_index, batch):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = global_mean_pool(x, batch)  # Pooling for graph classification
-        x = self.fc3(x)
-        return torch.sigmoid(x)  # Binary classification
+        # First GCN layer
+        x = self.conv1(x, edge_index)
+        x = F.relu(x)
+        x = self.dropout(x)
 
-# Function to preprocess a single SMILES string and generate input data for GCN
-def preprocess_smiles(smiles, radius=2, nBits=1024):
+        # Second GCN layer
+        x = self.conv2(x, edge_index)
+        x = F.relu(x)
+        x = self.dropout(x)
+
+        # Global mean pooling
+        x = global_mean_pool(x, batch)
+
+        # Fully connected layer
+        return torch.sigmoid(self.fc(x))
+
+# Function to convert SMILES to molecular graph
+def smiles_to_graph(smiles):
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
-        raise ValueError(f"Invalid SMILES: {smiles}")
+        return None
 
-    # Generate ECFP fingerprints
-    ecfp_gen = AllChem.GetMorganGenerator(radius=radius)
-    ecfp = ecfp_gen.GetFingerprint(mol)
+    # Atom features (using atomic number as a simple feature)
+    atom_features = []
+    for atom in mol.GetAtoms():
+        atom_features.append([atom.GetAtomicNum()])
+    atom_features = torch.tensor(atom_features, dtype=torch.float)
 
-    # Convert fingerprint to numpy array and then to tensor
-    ecfp_array = np.zeros((1,))
-    DataStructs.ConvertToNumpyArray(ecfp, ecfp_array)
-    x = torch.tensor(ecfp_array, dtype=torch.float).view(1, -1)  # Shape: (1, nBits)
+    # Edge indices (bonds)
+    edge_indices = []
+    for bond in mol.GetBonds():
+        i = bond.GetBeginAtomIdx()
+        j = bond.GetEndAtomIdx()
+        edge_indices.append((i, j))
+        edge_indices.append((j, i))  # Undirected graph
+    edge_indices = torch.tensor(edge_indices, dtype=torch.long).t().contiguous()
 
-    return Data(x=x, edge_index=torch.tensor([[0], [0]]))  # Dummy edge_index
+    return Data(x=atom_features, edge_index=edge_indices)
 
 # Function to load the trained GCN model
-def load_trained_gcn_model(model_path, hidden_channels, input_features=2048):
-    model = GCN(hidden_channels, input_features)
-    model.load_state_dict(torch.load(model_path, weights_only=True, map_location=torch.device('cpu')))
+def load_trained_gcn_model(model_path, num_features, hidden_dim, num_classes, dropout_rate=0.5):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = GCN(num_features, hidden_dim, num_classes, dropout_rate).to(device)
+    model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
-    return model
+    return model, device
 
-# Load the trained stacking classifier model
+# Load the trained stacking classifier model (keeping the original function)
 def load_stacking_classifier(model_path):
     try:
         return joblib.load(model_path)
@@ -66,7 +83,7 @@ def load_stacking_classifier(model_path):
         st.error(f"Unexpected error loading stacking classifier model: {str(e)}")
         return None
 
-# Calculate RDKit descriptors for the stacking classifier
+# Calculate RDKit descriptors for the stacking classifier (keeping the original function)
 def calculate_descriptors(smiles):
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -120,16 +137,24 @@ def calculate_descriptors(smiles):
         df = pd.DataFrame([descriptors], columns=valid_descriptors)
         return df
 
-# Predict toxicity using GCN model
-def predict_toxicity_gcn(smiles, model):
+# Predict toxicity using the new GCN model
+def predict_toxicity_gcn(smiles, model, device):
     try:
-        # Preprocess the SMILES string
-        data = preprocess_smiles(smiles)
+        # Convert SMILES to graph
+        graph = smiles_to_graph(smiles)
+        if graph is None:
+            return "Invalid molecule structure", None
+        
+        # Move graph to device
+        graph = graph.to(device)
+        
+        # Create a batch with just this one graph
+        batch = torch.zeros(graph.x.shape[0], dtype=torch.long, device=device)
         
         # Perform the prediction
         with torch.no_grad():
-            out = model(data.x.float(), data.edge_index, torch.tensor([0]))  # Single graph (batch = 0)
-            probability = out.item()  # Extract the single value
+            output = model(graph.x, graph.edge_index, batch)
+            probability = output.item()  # Extract the single value
 
         # Interpret the result
         toxicity = "Toxic" if probability > 0.5 else "Non-Toxic"
@@ -138,7 +163,7 @@ def predict_toxicity_gcn(smiles, model):
     except Exception as e:
         return str(e), None
 
-# Predict toxicity using stacking classifier
+# Predict toxicity using stacking classifier (keeping the original function)
 def predict_toxicity_stacking(smiles, model):
     try:
         # Calculate descriptors for the molecule
@@ -187,9 +212,14 @@ st.title("Molecule Toxicity Predictor")
 st.write("Enter a SMILES string to predict the toxicity of a molecule.")
 
 # Check if models exist
-gcn_model_path = "gcn_ecfp_model_64.pth"
+gcn_model_path = "toxicity_gcn_model.pth"  # Updated path for the new GCN model
 stacking_model_path = "stacking_classifier_model.pkl"
-hidden_channels = 64  # For GCN model
+
+# Model parameters for the new GCN
+num_features = 1
+hidden_dim = 64
+num_classes = 1
+dropout_rate = 0.5
 
 # Determine which models are available
 gcn_available = os.path.exists(gcn_model_path)
@@ -197,7 +227,7 @@ stacking_available = os.path.exists(stacking_model_path)
 
 available_models = []
 if gcn_available:
-    available_models.append("GCN with ECFP Fingerprints")
+    available_models.append("GCN with Molecular Graph Structure")
 if stacking_available:
     available_models.append("Stacking Classifier with RDKit Descriptors")
 
@@ -216,10 +246,17 @@ smiles_input = st.text_input("Enter SMILES string:")
 
 # Load the appropriate model based on selection
 model = None
-if model_option == "GCN with ECFP Fingerprints":
+device = None
+if model_option == "GCN with Molecular Graph Structure":
     try:
-        model = load_trained_gcn_model(gcn_model_path, hidden_channels)
-        st.info("Using Graph Convolutional Network model with ECFP fingerprints")
+        model, device = load_trained_gcn_model(
+            gcn_model_path, 
+            num_features, 
+            hidden_dim, 
+            num_classes, 
+            dropout_rate
+        )
+        st.info("Using Graph Convolutional Network model with molecular graph structure")
     except Exception as e:
         st.error(f"Error loading GCN model: {str(e)}")
         st.stop()
@@ -253,8 +290,8 @@ if st.button("Predict"):
 
             try:
                 # Predict toxicity based on selected model
-                if model_option == "GCN with ECFP Fingerprints":
-                    result, probability = predict_toxicity_gcn(canonical_smiles, model)
+                if model_option == "GCN with Molecular Graph Structure":
+                    result, probability = predict_toxicity_gcn(canonical_smiles, model, device)
                 else:
                     result, probability = predict_toxicity_stacking(canonical_smiles, model)
 
@@ -265,9 +302,10 @@ if st.button("Predict"):
                     # Display additional information about the prediction
                     st.write("---")
                     st.write("### Model Details")
-                    if model_option == "GCN with ECFP Fingerprints":
+                    if model_option == "GCN with Molecular Graph Structure":
                         st.write("**Model Type:** Graph Convolutional Network")
-                        st.write("**Input Features:** Extended Connectivity Fingerprints (ECFP)")
+                        st.write("**Input Features:** Molecular Graph Structure (Atom Features)")
+                        st.write("**Architecture:** 2-layer GCN with dropout")
                     else:
                         st.write("**Model Type:** Stacking Classifier")
                         st.write("**Base Models:** Random Forest, LightGBM, SVM")
