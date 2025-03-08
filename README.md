@@ -35,10 +35,10 @@ chmod +x toxicity_predictor.py
 
 ```bash
 # Using GCN model (default)
-python toxicity_predictor.py --smiles "CC(=O)Oc1ccccc1C(=O)O" 
+python toxicity_predictor.py --smiles "O=C=O" 
 
 # Using stacking classifier model
-python toxicity_predictor.py --smiles "CC(=O)Oc1ccccc1C(=O)O" --model stacking
+python toxicity_predictor.py --smiles "O=C=O" --model stacking
 ```
 
 ### Batch Processing
